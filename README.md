@@ -145,9 +145,10 @@ data/
       myrepo.git/   # bare git repository
     bob/
       parts.git/
+  seaweedFS/
 ```
 
-GLB blobs are stored inside SeaweedFS (Docker volume `seaweedfs-data`), not on the host filesystem. They are keyed by commit SHA and file path hash and are immutable once written.
+GLB blobs are stored inside SeaweedFS. They are keyed by commit SHA and file path hash and are immutable once written.
 
 ## Docker Compose services
 
@@ -172,7 +173,6 @@ GLB blobs are stored inside SeaweedFS (Docker volume `seaweedfs-data`), not on t
 | Volume | Type | Contents |
 |--------|------|----------|
 | `./data` | host bind mount | git repositories + `users.db` + `repos.db` — survives restarts |
-| `seaweedfs-data` | Docker named volume | GLB blobs managed by SeaweedFS |
 
 ## Building locally (without Docker)
 
