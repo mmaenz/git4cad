@@ -1,0 +1,31 @@
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY frontend/package*.json .
+RUN npm ci
+
+COPY frontend/ .
+
+# VITE_API_URL is intentionally left empty — nginx proxies /api to the server,
+# so the frontend uses the same origin for all requests.
+ARG VITE_API_URL=""
+ENV VITE_API_URL=$VITE_API_URL
+
+RUN npm run build
+
+# ── Runtime stage ──────────────────────────────────────────────────────────────
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY --from=builder /app/build ./build
+COPY --from=builder /app/package.json .
+COPY --from=builder /app/package-lock.json .
+
+RUN npm ci --omit=dev
+
+EXPOSE 3001
+ENV PORT=3001 HOST=0.0.0.0
+
+CMD ["node", "build"]
