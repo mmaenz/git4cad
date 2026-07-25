@@ -1,0 +1,83 @@
+services:
+
+  # ── SeaweedFS ─────────────────────────────────────────────────────────────
+  # Single-node: master + volume + filer all in one process.
+  # GLB artifacts are stored here (write-once, read-many blobs).
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    command: server -dir=/data -filer -ip=seaweedfs -master.volumeSizeLimitMB=1024
+    volumes:
+      - ./data/seaweedfs:/data
+    networks:
+      - internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://seaweedfs:8888/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── C++ git + CAD server ──────────────────────────────────────────────────
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    volumes:
+      # Bind-mount the entire data directory so repos and users.json both survive restarts.
+      - ./data:/data
+    environment:
+      G4C_DATA_DIR: /data
+      G4C_HOST: 0.0.0.0
+      G4C_PORT: "3000"
+      G4C_CAD_WORKERS: "4"
+      G4C_DEBUG: "false"
+      G4C_SEAWEEDFS_FILER_URL: "http://seaweedfs:8888"
+      G4C_SEAWEEDFS_PUBLIC_PREFIX: "/seaweed"
+      G4C_PUBLIC_URL: "http://localhost"
+    networks:
+      - internal
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/api/v1/repos"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ── SvelteKit frontend ────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    networks:
+      - internal
+    depends_on:
+      - server
+    restart: unless-stopped
+
+  # ── nginx reverse proxy ───────────────────────────────────────────────────
+  # Single public entrypoint on port 80.
+  #   /seaweed/*  → SeaweedFS filer (GLB blob serving, bypasses C++ server)
+  #   /api/*      → C++ server
+  #   /*.git/*    → C++ server (git smart HTTP)
+  #   /*          → SvelteKit frontend
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - internal
+    depends_on:
+      - server
+      - frontend
+    restart: unless-stopped
+
+networks:
+  internal:
+    driver: bridge

@@ -67,3 +67,34 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+# Build artifacts
+server/build/
+server/.cache/
+server/compile_commands.json
+
+# vcpkg
+server/vcpkg_installed/
+
+# Data directory (user repos, generated files)
+data/
+
+# Frontend
+frontend/node_modules/
+frontend/.svelte-kit/
+frontend/build/
+frontend/.env
+frontend/.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Temp files from CAD processing
+*.tmp
+CLAUDE.md
+.claude/

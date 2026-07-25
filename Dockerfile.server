@@ -1,0 +1,129 @@
+FROM ubuntu:22.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
+# cmake picks this up automatically when searching for packages
+ENV CMAKE_PREFIX_PATH=/usr/local
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake ninja-build pkg-config git curl ca-certificates \
+    # OpenSSL
+    libssl-dev \
+    # OpenCASCADE 7.5 — geometry kernel, STEP reader, XDE, GLTF writer
+    libocct-foundation-dev \
+    libocct-modeling-data-dev \
+    libocct-modeling-algorithms-dev \
+    libocct-data-exchange-dev \
+    libocct-ocaf-dev \
+    # TBB required by OpenCASCADE parallel algorithms
+    libtbb-dev \
+    # X11/font libs pulled in transitively by OCCT Visualization targets
+    libxi-dev libfontconfig1-dev libfreetype6-dev \
+    # Asio (required by Crow, standalone header-only)
+    libasio-dev \
+    # nlohmann/json, spdlog, pugixml
+    nlohmann-json3-dev \
+    libspdlog-dev \
+    libpugixml-dev \
+    # libcurl for SeaweedFS filer HTTP API
+    libcurl4-openssl-dev \
+    # SQLite for user database
+    libsqlite3-dev \
+    # zlib needed by libzip source build
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# libgit2 from source — provides cmake target libgit2::libgit2
+RUN git clone --depth 1 --branch v1.7.2 https://github.com/libgit2/libgit2.git /tmp/libgit2 \
+    && cmake -S /tmp/libgit2 -B /tmp/libgit2-build -GNinja \
+       -DCMAKE_BUILD_TYPE=Release \
+       -DBUILD_TESTS=OFF \
+       -DBUILD_CLI=OFF \
+    && cmake --build /tmp/libgit2-build \
+    && cmake --install /tmp/libgit2-build \
+    && ldconfig \
+    && rm -rf /tmp/libgit2 /tmp/libgit2-build
+
+# libzip from source — provides cmake target libzip::zip
+RUN git clone --depth 1 --branch v1.10.1 https://github.com/nih-at/libzip.git /tmp/libzip \
+    && cmake -S /tmp/libzip -B /tmp/libzip-build -GNinja \
+       -DCMAKE_BUILD_TYPE=Release \
+       -DBUILD_TOOLS=OFF \
+       -DBUILD_REGRESS=OFF \
+       -DBUILD_EXAMPLES=OFF \
+       -DBUILD_DOC=OFF \
+    && cmake --build /tmp/libzip-build \
+    && cmake --install /tmp/libzip-build \
+    && ldconfig \
+    && rm -rf /tmp/libzip /tmp/libzip-build
+
+# SQLiteCpp from source — thin RAII wrapper around SQLite3
+RUN git clone --depth 1 --branch 3.3.1 https://github.com/SRombauts/SQLiteCpp.git /tmp/sqlitecpp \
+    && cmake -S /tmp/sqlitecpp -B /tmp/sqlitecpp-build -GNinja \
+       -DCMAKE_BUILD_TYPE=Release \
+       -DSQLITECPP_RUN_CPPLINT=OFF \
+       -DSQLITECPP_RUN_CPPCHECK=OFF \
+       -DSQLITECPP_BUILD_TESTS=OFF \
+       -DSQLITECPP_BUILD_EXAMPLES=OFF \
+       -DSQLITECPP_INTERNAL_SQLITE=OFF \
+    && cmake --build /tmp/sqlitecpp-build \
+    && cmake --install /tmp/sqlitecpp-build \
+    && rm -rf /tmp/sqlitecpp /tmp/sqlitecpp-build
+
+# Crow from source — header-only, provides cmake target Crow::Crow
+RUN git clone --depth 1 --branch v1.2.0 https://github.com/CrowCpp/Crow.git /tmp/crow \
+    && cmake -S /tmp/crow -B /tmp/crow-build -GNinja \
+       -DCROW_BUILD_EXAMPLES=OFF \
+       -DCROW_BUILD_TESTS=OFF \
+    && cmake --install /tmp/crow-build \
+    && rm -rf /tmp/crow /tmp/crow-build
+
+WORKDIR /src
+COPY server/ .
+
+RUN cmake -B build -GNinja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_TESTING=OFF \
+    && cmake --build build
+
+# ── Runtime stage ──────────────────────────────────────────────────────────────
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Required at runtime: git-http-backend
+    git \
+    # OpenSSL runtime
+    libssl3 \
+    # OpenCASCADE runtime (Ubuntu 22.04: hyphen separator, not dot)
+    libocct-foundation-7.5 \
+    libocct-modeling-data-7.5 \
+    libocct-modeling-algorithms-7.5 \
+    libocct-data-exchange-7.5 \
+    libocct-ocaf-7.5 \
+    libtbb2 \
+    libxi6 libfontconfig1 libfreetype6 \
+    # spdlog, pugixml runtime
+    libspdlog1 \
+    libpugixml1v5 \
+    libcurl4 curl \
+    libsqlite3-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy source-built shared libraries
+COPY --from=builder /usr/local/lib/libgit2.so* /usr/local/lib/
+COPY --from=builder /usr/local/lib/libzip.so* /usr/local/lib/
+RUN ldconfig
+
+WORKDIR /app
+COPY --from=builder /src/build/git4cad-server .
+
+RUN mkdir -p /data
+
+EXPOSE 3000
+ENV G4C_DATA_DIR=/data \
+    G4C_HOST=0.0.0.0 \
+    G4C_PORT=3000 \
+    G4C_CAD_WORKERS=4
+
+CMD ["/app/git4cad-server"]
