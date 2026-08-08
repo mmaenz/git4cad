@@ -281,7 +281,7 @@
 							disabled={togglingGroupChildren}
 							onclick={() => setGroupChildren(false)}
 						>
-							Whole tree
+							Individual
 						</button>
 						<button
 							class="segmented-btn"

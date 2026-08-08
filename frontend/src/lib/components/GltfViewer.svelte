@@ -68,6 +68,19 @@
 	let modelPivot: THREE.Group;
 	let currentModel: THREE.Object3D | null = null;
 	let selectionHelper: THREE.BoxHelper | null = null;
+	// Meshes currently wearing a cloned, tinted material for selection — maps
+	// back to each mesh's real material(s) so they can be restored exactly
+	// (materials are frequently shared across meshes/parts in a converted
+	// GLB, so mutating them in place would bleed the tint onto unrelated
+	// geometry; cloning per-mesh avoids that).
+	const highlightedMeshes = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
+	const kHighlightColor = 0x2f81f7;
+	// Selecting the root part (the file open in the viewer, as opposed to
+	// one of its individually-selectable linked children) highlights the
+	// whole assembly rather than just its own geometry — a different tint
+	// makes that "whole tree" selection visually distinct from a single
+	// part's.
+	const kRootHighlightColor = 0xf85149;
 	// URL of the model currently shown (or in flight) — lets us detect a new glbUrl and reload
 	let loadedUrl = $state('');
 	// resolveLinks value the current/in-flight load used — resolveLinks often
@@ -78,6 +91,7 @@
 	let loadedResolveLinks = $state(false);
 	// groupChildren value the current/in-flight load used — see loadedResolveLinks.
 	let loadedGroupChildren = $state(false);
+    // AxesHelper for orientation
 
 	function disposeObject3D(object: THREE.Object3D): void {
 		object.traverse((child: THREE.Object3D) => {
@@ -89,15 +103,75 @@
 		});
 	}
 
+	function tintMaterial(material: THREE.Material, color: number): THREE.Material {
+		const clone = material.clone();
+		if (clone instanceof THREE.MeshStandardMaterial || clone instanceof THREE.MeshPhysicalMaterial) {
+			clone.emissive = new THREE.Color(color);
+			clone.emissiveIntensity = 0.6;
+		} else if ('color' in clone) {
+			(clone as THREE.Material & { color: THREE.Color }).color = new THREE.Color(color);
+		}
+		return clone;
+	}
+
+	function clearHighlightMaterials() {
+		for (const [mesh, original] of highlightedMeshes) {
+			const current = mesh.material;
+			for (const m of Array.isArray(current) ? current : [current]) m.dispose();
+			mesh.material = original;
+		}
+		highlightedMeshes.clear();
+	}
+
+	// Collects the meshes a selection should tint. `stopAtNestedParts`
+	// mirrors resolvePart's walk-up logic in reverse: in individual-selection
+	// mode (see groupChildren) every nested linked part carries its own
+	// g4cPartPath tag, but those child parts still live inside root's
+	// Object3D subtree (that's how loadLinkedParts composes the assembly),
+	// so an unbounded traverse would sweep up their geometry too — descent
+	// stops the moment it reaches another tagged part. Selecting the root
+	// part itself (the file open in the viewer) is the one case that should
+	// *not* stop there: it represents the whole assembly, children included.
+	function collectSelectedMeshes(root: THREE.Object3D, stopAtNestedParts: boolean): THREE.Mesh[] {
+		const meshes: THREE.Mesh[] = [];
+		const visit = (node: THREE.Object3D, isRoot: boolean) => {
+			if (stopAtNestedParts && !isRoot && node.userData?.g4cPartPath) return;
+			if (node instanceof THREE.Mesh) meshes.push(node);
+			for (const child of node.children) visit(child, false);
+		};
+		visit(root, true);
+		return meshes;
+	}
+
+	function applyTint(mesh: THREE.Mesh, color: number) {
+		highlightedMeshes.set(mesh, mesh.material);
+		mesh.material = Array.isArray(mesh.material)
+			? mesh.material.map((m) => tintMaterial(m, color))
+			: tintMaterial(mesh.material, color);
+	}
+
 	function setHighlight(root: THREE.Object3D | null) {
 		if (selectionHelper) {
 			scene.remove(selectionHelper);
 			selectionHelper.dispose();
 			selectionHelper = null;
 		}
+		clearHighlightMaterials();
 		if (root) {
-			selectionHelper = new THREE.BoxHelper(root, 0x2f81f7);
+			const isRootPart = root === currentModel;
+			selectionHelper = new THREE.BoxHelper(root, isRootPart ? kRootHighlightColor : kHighlightColor);
 			scene.add(selectionHelper);
+			if (isRootPart) {
+				// Root's own geometry gets the distinguishing red tint; every
+				// pulled-in child part keeps the ordinary blue, so only the
+				// file actually open in the viewer reads as "the root."
+				const ownMeshes = new Set(collectSelectedMeshes(root, true));
+				for (const mesh of collectSelectedMeshes(root, false)) {
+					applyTint(mesh, ownMeshes.has(mesh) ? kRootHighlightColor : kHighlightColor);
+				}
+			} else {
+				for (const mesh of collectSelectedMeshes(root, true)) applyTint(mesh, kHighlightColor);
+			}
 		}
 	}
 
