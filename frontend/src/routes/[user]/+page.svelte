@@ -1,10 +1,11 @@
 <script lang="ts">
-	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { listRepos, type RepoInfo } from '$lib/api';
 	import RepoCard from '$lib/components/RepoCard.svelte';
+	import type { PageProps } from './$types';
 
-	let user = $derived($page.params.user);
+	let { params }: PageProps = $props();
+	let user = $derived(params.user);
 
 	let repos = $state<RepoInfo[]>([]);
 	let loading = $state(true);

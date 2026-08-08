@@ -71,9 +71,15 @@ Testing/
 server/build/
 server/.cache/
 server/compile_commands.json
+# CLion's default build dir name (doesn't match build-*/ above)
+server/cmake-build-*/
 
 # vcpkg
 server/vcpkg_installed/
+
+# Local clangd setup (host-specific, regenerable via server/scripts/setup-clangd.sh)
+server/.dev-include/
+server/.clangd
 
 # Data directory (user repos, generated files)
 data/

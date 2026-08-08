@@ -98,7 +98,8 @@ file(GLOB_RECURSE SERVER_SOURCES
 )
 list(FILTER SERVER_SOURCES EXCLUDE REGEX ".*/tests/.*\\.cpp$")
 
-add_executable(git4cad-server ${SERVER_SOURCES})
+add_executable(git4cad-server ${SERVER_SOURCES}
+        src/main.cpp)
 
 target_include_directories(git4cad-server PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"

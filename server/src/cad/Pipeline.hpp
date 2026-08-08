@@ -42,6 +42,15 @@ public:
                                    const std::string& sha,
                                    const std::string& file_path) const;
 
+    /// True if this job is already tracked (queued, in progress, or done) —
+    /// a cheap in-memory check callers can use before doing the work to
+    /// re-enqueue a job that may simply have never been seen (e.g. after a
+    /// server restart lost the original push-time enqueue).
+    [[nodiscard]] bool has_tracked_job(const std::string& user,
+                                       const std::string& repo,
+                                       const std::string& sha,
+                                       const std::string& file_path) const;
+
 private:
     static std::string job_key(const std::string& user,
                                const std::string& repo,
@@ -49,7 +58,7 @@ private:
                                const std::string& file_path);
 
     void worker_loop();
-    void process_job(const CadJob& job);
+    void process_job(const CadJob& job) const;
 
     storage::SeaweedFsClient&        seaweedfs_;
     std::deque<CadJob>               queue_{};

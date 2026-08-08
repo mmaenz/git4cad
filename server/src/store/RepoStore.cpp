@@ -19,9 +19,22 @@ struct RepoStore::Impl {
                 owner   TEXT NOT NULL,
                 name    TEXT NOT NULL,
                 private INTEGER NOT NULL DEFAULT 0,
+                z_up    INTEGER NOT NULL DEFAULT 0,
+                resolve_links INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (owner, name)
             )
         )");
+        // Migrations for databases created before these columns existed.
+        try {
+            db.exec("ALTER TABLE repos ADD COLUMN z_up INTEGER NOT NULL DEFAULT 0");
+        } catch (const SQLite::Exception&) {
+            // Column already present — nothing to do.
+        }
+        try {
+            db.exec("ALTER TABLE repos ADD COLUMN resolve_links INTEGER NOT NULL DEFAULT 0");
+        } catch (const SQLite::Exception&) {
+            // Column already present — nothing to do.
+        }
         db.exec(R"(
             CREATE TABLE IF NOT EXISTS repo_members (
                 owner    TEXT NOT NULL,
@@ -36,15 +49,17 @@ struct RepoStore::Impl {
     }
 };
 
-RepoStore::RepoStore(const fs::path& db_path) {
+std::optional<RepoStore> RepoStore::open(const fs::path& db_path) {
     try {
         fs::create_directories(db_path.parent_path());
-        impl_ = std::make_unique<Impl>(db_path);
+        return RepoStore(std::make_unique<Impl>(db_path));
     } catch (const SQLite::Exception& e) {
         spdlog::error("RepoStore: failed to open '{}': {}", db_path.string(), e.what());
-        throw;
+        return std::nullopt;
     }
 }
+
+RepoStore::RepoStore(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 
 RepoStore::~RepoStore() = default;
 
@@ -106,6 +121,59 @@ bool RepoStore::is_private(const std::string& owner, const std::string& name) co
         return q.getColumn(0).getInt() != 0;
     } catch (const SQLite::Exception& e) {
         spdlog::error("RepoStore::is_private: {}", e.what());
+        return false;
+    }
+}
+
+void RepoStore::set_z_up(const std::string& owner, const std::string& name, bool z_up) {
+    std::lock_guard lk{impl_->mtx};
+    try {
+        SQLite::Statement q{impl_->db,
+            "UPDATE repos SET z_up = ? WHERE owner = ? AND name = ?"};
+        q.bind(1, z_up ? 1 : 0); q.bind(2, owner); q.bind(3, name);
+        q.exec();
+    } catch (const SQLite::Exception& e) {
+        spdlog::error("RepoStore::set_z_up: {}", e.what());
+    }
+}
+
+bool RepoStore::is_z_up(const std::string& owner, const std::string& name) const {
+    std::lock_guard lk{impl_->mtx};
+    try {
+        SQLite::Statement q{impl_->db,
+            "SELECT z_up FROM repos WHERE owner = ? AND name = ?"};
+        q.bind(1, owner); q.bind(2, name);
+        if (!q.executeStep()) return false; // unknown repo → default Y-up
+        return q.getColumn(0).getInt() != 0;
+    } catch (const SQLite::Exception& e) {
+        spdlog::error("RepoStore::is_z_up: {}", e.what());
+        return false;
+    }
+}
+
+void RepoStore::set_resolve_links(const std::string& owner, const std::string& name,
+                                   bool resolve_links) {
+    std::lock_guard lk{impl_->mtx};
+    try {
+        SQLite::Statement q{impl_->db,
+            "UPDATE repos SET resolve_links = ? WHERE owner = ? AND name = ?"};
+        q.bind(1, resolve_links ? 1 : 0); q.bind(2, owner); q.bind(3, name);
+        q.exec();
+    } catch (const SQLite::Exception& e) {
+        spdlog::error("RepoStore::set_resolve_links: {}", e.what());
+    }
+}
+
+bool RepoStore::is_resolve_links(const std::string& owner, const std::string& name) const {
+    std::lock_guard lk{impl_->mtx};
+    try {
+        SQLite::Statement q{impl_->db,
+            "SELECT resolve_links FROM repos WHERE owner = ? AND name = ?"};
+        q.bind(1, owner); q.bind(2, name);
+        if (!q.executeStep()) return false; // unknown repo → single-file default
+        return q.getColumn(0).getInt() != 0;
+    } catch (const SQLite::Exception& e) {
+        spdlog::error("RepoStore::is_resolve_links: {}", e.what());
         return false;
     }
 }

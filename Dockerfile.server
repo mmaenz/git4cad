@@ -6,6 +6,10 @@ ENV CMAKE_PREFIX_PATH=/usr/local
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake ninja-build pkg-config git curl ca-certificates \
+    # gdb — unused by the production image (this stage is discarded before
+    # the runtime stage below), but lets CLion's Docker Compose toolchain
+    # debug against this same stage. See docker-compose.yml's clion-dev service.
+    gdb \
     # OpenSSL
     libssl-dev \
     # OpenCASCADE 7.5 — geometry kernel, STEP reader, XDE, GLTF writer

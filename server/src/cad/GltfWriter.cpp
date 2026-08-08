@@ -12,7 +12,8 @@
 
 namespace cad {
 
-bool write_glb(const Handle(TDocStd_Document)& doc, const fs::path& output_path) {
+bool write_glb(const Handle(TDocStd_Document)& doc, const fs::path& output_path,
+                const std::string& links_json) {
     if (doc.IsNull()) {
         spdlog::error("GltfWriter: document handle is null");
         return false;
@@ -30,6 +31,9 @@ bool write_glb(const Handle(TDocStd_Document)& doc, const fs::path& output_path)
     RWGltf_CafWriter writer(out_str, Standard_True /*binary GLB*/);
 
     TColStd_IndexedDataMapOfStringString metadata{};
+    if (!links_json.empty()) {
+        metadata.Add(TCollection_AsciiString("g4c_links"), TCollection_AsciiString(links_json.c_str()));
+    }
     const Standard_Boolean ok =
         writer.Perform(doc, metadata, Message_ProgressRange());
 

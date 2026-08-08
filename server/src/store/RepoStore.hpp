@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -16,17 +17,35 @@ struct MemberInfo {
 
 class RepoStore {
 public:
-    explicit RepoStore(const fs::path& db_path);
+    /// Opens (creating if needed) the SQLite-backed repo store. Returns
+    /// nullopt if the database can't be opened.
+    [[nodiscard]] static std::optional<RepoStore> open(const fs::path& db_path);
+
     ~RepoStore();
 
     RepoStore(const RepoStore&)            = delete;
     RepoStore& operator=(const RepoStore&) = delete;
+    RepoStore(RepoStore&&)                 = default;
+    RepoStore& operator=(RepoStore&&)      = default;
 
     void create_repo(const std::string& owner, const std::string& name, bool is_private);
     void delete_repo(const std::string& owner, const std::string& name);
     void set_private(const std::string& owner, const std::string& name, bool is_private);
 
     [[nodiscard]] bool is_private(const std::string& owner, const std::string& name) const;
+
+    // Whether the 3D viewer should treat the Z axis as "up" (common for STEP/FreeCAD
+    // data) instead of the default Y-up convention.
+    void set_z_up(const std::string& owner, const std::string& name, bool z_up);
+
+    [[nodiscard]] bool is_z_up(const std::string& owner, const std::string& name) const;
+
+    // Whether the 3D viewer should resolve FreeCAD App::Link references and
+    // merge the full linked assembly into one model, instead of showing only
+    // the selected file's own shapes.
+    void set_resolve_links(const std::string& owner, const std::string& name, bool resolve_links);
+
+    [[nodiscard]] bool is_resolve_links(const std::string& owner, const std::string& name) const;
 
     // Returns true if `user` may read (clone/fetch) this repo.
     // Empty user = unauthenticated: only public repos allowed.
@@ -46,6 +65,8 @@ public:
 
 private:
     struct Impl;
+    explicit RepoStore(std::unique_ptr<Impl> impl);
+
     std::unique_ptr<Impl> impl_;
 };
 

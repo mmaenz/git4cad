@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { authStore } from '$lib/stores/auth';
@@ -7,9 +6,11 @@
 		getRepo, updateRepo, listMembers, addMember, removeMember, deleteRepo,
 		type RepoInfo, type MemberInfo
 	} from '$lib/api';
+	import type { PageProps } from './$types';
 
-	let user = $derived($page.params.user);
-	let repo = $derived($page.params.repo);
+	let { params }: PageProps = $props();
+	let user = $derived(params.user);
+	let repo = $derived(params.repo);
 	let isOwner = $derived($authStore.username === user);
 
 	let repoInfo = $state<RepoInfo | null>(null);
@@ -19,6 +20,12 @@
 
 	// Visibility
 	let togglingPrivacy = $state(false);
+
+	// 3D viewer orientation
+	let togglingZUp = $state(false);
+
+	// 3D viewer linked assembly
+	let togglingResolveLinks = $state(false);
 
 	// Collaborators
 	let addMemberName    = $state('');
@@ -54,6 +61,30 @@
 			error = e.message || 'Failed to update visibility';
 		} finally {
 			togglingPrivacy = false;
+		}
+	}
+
+	async function toggleZUp() {
+		if (!repoInfo) return;
+		togglingZUp = true;
+		try {
+			repoInfo = await updateRepo(user, repo, { z_up: !repoInfo.z_up });
+		} catch (e: any) {
+			error = e.message || 'Failed to update viewer orientation';
+		} finally {
+			togglingZUp = false;
+		}
+	}
+
+	async function toggleResolveLinks() {
+		if (!repoInfo) return;
+		togglingResolveLinks = true;
+		try {
+			repoInfo = await updateRepo(user, repo, { resolve_links: !repoInfo.resolve_links });
+		} catch (e: any) {
+			error = e.message || 'Failed to update assembly setting';
+		} finally {
+			togglingResolveLinks = false;
 		}
 	}
 
@@ -151,6 +182,60 @@
 				</div>
 				<button class="btn" onclick={togglePrivacy} disabled={togglingPrivacy}>
 					{togglingPrivacy ? '...' : repoInfo.private ? 'Make public' : 'Make private'}
+				</button>
+			</div>
+		</div>
+	</section>
+
+	<!-- 3D viewer orientation -->
+	<section class="settings-section">
+		<h2 class="section-title">3D viewer</h2>
+		<div class="settings-card">
+			<div class="visibility-row">
+				<div class="visibility-info">
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+						<polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+						<line x1="12" y1="22.08" x2="12" y2="12"/>
+					</svg>
+					<div>
+						<strong>Up axis</strong>
+						<p>
+							Orientation used when rendering STEP/FCStd files in the browser.
+							{#if repoInfo.z_up}
+								Currently <strong>Z</strong> is treated as up, matching most CAD tools.
+							{:else}
+								Currently <strong>Y</strong> is treated as up, the default for glTF/Three.js.
+							{/if}
+						</p>
+					</div>
+				</div>
+				<button class="btn" onclick={toggleZUp} disabled={togglingZUp}>
+					{togglingZUp ? '...' : repoInfo.z_up ? 'Use Y up' : 'Use Z up'}
+				</button>
+			</div>
+
+			<div class="visibility-row viewer-row-divider">
+				<div class="visibility-info">
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<rect x="3" y="3" width="7" height="7" rx="1"/>
+						<rect x="14" y="14" width="7" height="7" rx="1"/>
+						<path d="M10 6.5h4a3 3 0 0 1 3 3V14"/>
+					</svg>
+					<div>
+						<strong>Linked assembly</strong>
+						<p>
+							FreeCAD files can link to shapes defined in other FCStd files (App::Link).
+							{#if repoInfo.resolve_links}
+								Currently the viewer <strong>resolves links</strong> and shows the full assembly in one model.
+							{:else}
+								Currently the viewer shows <strong>only the selected file's own shapes</strong> — linked objects are skipped.
+							{/if}
+						</p>
+					</div>
+				</div>
+				<button class="btn" onclick={toggleResolveLinks} disabled={togglingResolveLinks}>
+					{togglingResolveLinks ? '...' : repoInfo.resolve_links ? 'Show file only' : 'Show full assembly'}
 				</button>
 			</div>
 		</div>
@@ -287,6 +372,12 @@
 		align-items: flex-start;
 		justify-content: space-between;
 		gap: 16px;
+	}
+
+	.viewer-row-divider {
+		margin-top: 16px;
+		padding-top: 16px;
+		border-top: 1px solid var(--color-border);
 	}
 
 	.visibility-info {

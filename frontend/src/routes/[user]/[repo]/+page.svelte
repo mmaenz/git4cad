@@ -1,11 +1,13 @@
 <script lang="ts">
-	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { getRepo, getTree, getBlobUrl, type RepoInfo, type TreeEntry } from '$lib/api';
 	import FileTree from '$lib/components/FileTree.svelte';
+	import CodeBrowserLayout from '$lib/components/CodeBrowserLayout.svelte';
+	import type { PageProps } from './$types';
 
-	let user = $derived($page.params.user);
-	let repo = $derived($page.params.repo);
+	let { params }: PageProps = $props();
+	let user = $derived(params.user);
+	let repo = $derived(params.repo);
 
 	let repoInfo = $state<RepoInfo | null>(null);
 	let entries = $state<TreeEntry[]>([]);
@@ -71,43 +73,45 @@ git push -u origin {repoInfo.default_branch}</pre>
 		</div>
 	</div>
 {:else}
-	<div class="ref-bar">
-		<div class="ref-badge">
-			<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-				<line x1="6" y1="3" x2="6" y2="15"/>
-				<circle cx="18" cy="6" r="3"/>
-				<circle cx="6" cy="18" r="3"/>
-				<path d="M18 9a9 9 0 0 1-9 9"/>
-			</svg>
-			{repoInfo?.default_branch}
-		</div>
-	</div>
-
-	<FileTree
-		{entries}
-		{user}
-		{repo}
-		ref={repoInfo?.default_branch ?? 'main'}
-		currentPath=""
-	/>
-
-	{#if readmeContent !== null}
-		<div class="readme-section">
-			<div class="readme-header">
+	<CodeBrowserLayout {user} {repo} ref={repoInfo?.default_branch ?? 'main'} selectedPath="">
+		<div class="ref-bar">
+			<div class="ref-badge">
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-					<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-					<polyline points="14 2 14 8 20 8"/>
-					<line x1="16" y1="13" x2="8" y2="13"/>
-					<line x1="16" y1="17" x2="8" y2="17"/>
-					<polyline points="10 9 9 9 8 9"/>
+					<line x1="6" y1="3" x2="6" y2="15"/>
+					<circle cx="18" cy="6" r="3"/>
+					<circle cx="6" cy="18" r="3"/>
+					<path d="M18 9a9 9 0 0 1-9 9"/>
 				</svg>
-				README
-			</div>
-			<div class="readme-body">
-				<pre class="readme-content">{readmeContent}</pre>
+				{repoInfo?.default_branch}
 			</div>
 		</div>
-	{/if}
+
+		<FileTree
+			{entries}
+			{user}
+			{repo}
+			ref={repoInfo?.default_branch ?? 'main'}
+			currentPath=""
+		/>
+
+		{#if readmeContent !== null}
+			<div class="readme-section">
+				<div class="readme-header">
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+						<polyline points="14 2 14 8 20 8"/>
+						<line x1="16" y1="13" x2="8" y2="13"/>
+						<line x1="16" y1="17" x2="8" y2="17"/>
+						<polyline points="10 9 9 9 8 9"/>
+					</svg>
+					README
+				</div>
+				<div class="readme-body">
+					<pre class="readme-content">{readmeContent}</pre>
+				</div>
+			</div>
+		{/if}
+	</CodeBrowserLayout>
 {/if}
 
 <style>

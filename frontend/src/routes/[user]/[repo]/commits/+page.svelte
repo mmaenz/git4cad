@@ -1,11 +1,12 @@
 <script lang="ts">
-	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { listCommits, getRepo, type CommitInfo, type RepoInfo } from '$lib/api';
 	import CommitList from '$lib/components/CommitList.svelte';
+	import type { PageProps } from './$types';
 
-	let user = $derived($page.params.user);
-	let repo = $derived($page.params.repo);
+	let { params }: PageProps = $props();
+	let user = $derived(params.user);
+	let repo = $derived(params.repo);
 
 	let commits = $state<CommitInfo[]>([]);
 	let repoInfo = $state<RepoInfo | null>(null);

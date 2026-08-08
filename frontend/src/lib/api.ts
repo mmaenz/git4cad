@@ -14,6 +14,8 @@ export interface RepoInfo {
 	default_branch: string;
 	empty: boolean;
 	private: boolean;
+	z_up: boolean;
+	resolve_links: boolean;
 }
 
 export interface MemberInfo {
@@ -144,7 +146,7 @@ export async function createRepo(
 export async function updateRepo(
 	user: string,
 	repo: string,
-	patch: { private?: boolean }
+	patch: { private?: boolean; z_up?: boolean; resolve_links?: boolean }
 ): Promise<RepoInfo> {
 	const res = await apiFetch(
 		`/api/v1/repos/${encodeURIComponent(user)}/${encodeURIComponent(repo)}`,

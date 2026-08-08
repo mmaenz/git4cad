@@ -13,7 +13,10 @@ namespace fs = std::filesystem;
 /// Thread-safe persistent user store backed by a SQLite database.
 class UserStore {
 public:
-    explicit UserStore(fs::path path);
+    /// Opens (creating if needed) the SQLite-backed user store. Returns
+    /// nullopt if the database can't be opened.
+    [[nodiscard]] static std::optional<UserStore> open(fs::path path);
+
     ~UserStore();
 
     // Non-copyable, moveable
@@ -42,6 +45,8 @@ public:
     struct Impl;
 
 private:
+    explicit UserStore(std::unique_ptr<Impl> impl);
+
     [[nodiscard]] static std::string make_salt();
     [[nodiscard]] static std::string make_token();
     [[nodiscard]] static std::string hash_password(std::string_view salt,

@@ -1,15 +1,17 @@
 <script lang="ts">
-	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { getTree, type TreeEntry } from '$lib/api';
 	import FileTree from '$lib/components/FileTree.svelte';
+	import CodeBrowserLayout from '$lib/components/CodeBrowserLayout.svelte';
+	import type { PageProps } from './$types';
 
-	let user = $derived($page.params.user);
-	let repo = $derived($page.params.repo);
+	let { params }: PageProps = $props();
+	let user = $derived(params.user);
+	let repo = $derived(params.repo);
 
 	// The [...path] param is "ref/optional/sub/path"
 	// We split it: first segment = ref, rest = currentPath
-	let rawPath = $derived($page.params.path ?? '');
+	let rawPath = $derived(params.path);
 
 	let ref = $derived(rawPath.split('/')[0] ?? 'main');
 	let currentPath = $derived(rawPath.split('/').slice(1).join('/'));
@@ -59,27 +61,29 @@
 </svelte:head>
 
 <div class="tree-page">
-	<div class="breadcrumb mb-3">
-		{#each breadcrumbParts as part, i (part.href)}
-			{#if i > 0}<span class="breadcrumb-sep">/</span>{/if}
-			{#if i === breadcrumbParts.length - 1}
-				<span class="bc-current">{part.label}</span>
-			{:else}
-				<a href={part.href} class="bc-link">{part.label}</a>
-			{/if}
-		{/each}
-	</div>
-
-	{#if loading}
-		<div class="loading-state">
-			<div class="spinner"></div>
-			<span>Loading...</span>
+	<CodeBrowserLayout {user} {repo} {ref} selectedPath={currentPath}>
+		<div class="breadcrumb mb-3">
+			{#each breadcrumbParts as part, i (part.href)}
+				{#if i > 0}<span class="breadcrumb-sep">/</span>{/if}
+				{#if i === breadcrumbParts.length - 1}
+					<span class="bc-current">{part.label}</span>
+				{:else}
+					<a href={part.href} class="bc-link">{part.label}</a>
+				{/if}
+			{/each}
 		</div>
-	{:else if error}
-		<div class="alert alert-error">{error}</div>
-	{:else}
-		<FileTree {entries} {user} {repo} {ref} {currentPath} />
-	{/if}
+
+		{#if loading}
+			<div class="loading-state">
+				<div class="spinner"></div>
+				<span>Loading...</span>
+			</div>
+		{:else if error}
+			<div class="alert alert-error">{error}</div>
+		{:else}
+			<FileTree {entries} {user} {repo} {ref} {currentPath} />
+		{/if}
+	</CodeBrowserLayout>
 </div>
 
 <style>

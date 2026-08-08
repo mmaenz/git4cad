@@ -50,9 +50,21 @@ int main() {
 
     // Core services.
     storage::SeaweedFsClient seaweedfs{cfg.seaweedfs_filer_url, cfg.seaweedfs_public_prefix};
-    auth::UserStore          users{cfg.users_db()};
-    store::RepoStore         repo_store{cfg.repos_db()};
-    cad::CadPipeline         pipeline{seaweedfs, cfg.cad_workers};
+
+    auto users_store = auth::UserStore::open(cfg.users_db());
+    if (!users_store) {
+        spdlog::critical("Failed to open user database at '{}'", cfg.users_db().string());
+        return 1;
+    }
+    auto repos_store = store::RepoStore::open(cfg.repos_db());
+    if (!repos_store) {
+        spdlog::critical("Failed to open repo database at '{}'", cfg.repos_db().string());
+        return 1;
+    }
+
+    auth::UserStore&  users      = *users_store;
+    store::RepoStore& repo_store = *repos_store;
+    cad::CadPipeline  pipeline{seaweedfs, cfg.cad_workers};
     spdlog::info("CAD pipeline started with {} workers", cfg.cad_workers);
 
     // HTTP application.

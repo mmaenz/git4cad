@@ -48,6 +48,43 @@ services:
       retries: 3
       start_period: 15s
 
+  # ── CLion dev container ───────────────────────────────────────────────────
+  # Full C++ toolchain (cmake/ninja/gdb) + every dependency pre-built from the
+  # same `builder` stage the production server image uses — no separate
+  # Dockerfile to keep in sync. Source is bind-mounted live; nothing is baked
+  # in or auto-run. Point CLion's Docker Compose toolchain at this service
+  # (Settings → Build, Execution, Deployment → Toolchains → + → Docker
+  # Compose → this file → service "clion-dev"). Open frontend/server as the
+  # CLion project root so its CMakeLists.txt lines up with /src below.
+  # Gated behind the "dev" profile so `docker compose up` never starts it by
+  # accident; CLion starts/stops it itself when you build/run/debug.
+  clion-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+      target: builder
+    volumes:
+      - ./server:/src
+      - ./data:/data
+    ports:
+      - "3001:3000" # manual testing of a locally-run binary, bypassing nginx
+    environment:
+      G4C_DATA_DIR: /data
+      G4C_HOST: 0.0.0.0
+      G4C_PORT: "3000"
+      G4C_CAD_WORKERS: "4"
+      G4C_DEBUG: "true"
+      G4C_SEAWEEDFS_FILER_URL: "http://seaweedfs:8888"
+      G4C_SEAWEEDFS_PUBLIC_PREFIX: "/seaweed"
+    networks:
+      - internal
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
+    command: ["sleep", "infinity"]
+    profiles:
+      - dev
+
   # ── SvelteKit frontend ────────────────────────────────────────────────────
   frontend:
     build:
