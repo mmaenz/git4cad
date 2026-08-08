@@ -200,6 +200,111 @@ npm run build     # production build → build/
 npm run check     # TypeScript type check
 ```
 
+## Debugging the server in CLion (Docker toolchain)
+
+Open Clion and create a new project from source in the server directory (root file CMakeLists.txt)!
+  
+The `clion-dev` service in `docker-compose.yml` builds a full C++ toolchain
+image (`git4cad-clion-dev`) from `Dockerfile.server`'s `builder` stage —
+cmake, ninja, gdb/gdbserver, and every dependency, pre-built. It's gated
+behind the `dev` compose profile, so a plain `docker compose up` never
+starts it.
+
+CLion can't point a Toolchain directly at a `docker-compose.yml` service —
+only at a plain image — so the compose service exists to *build* that image
+reproducibly, and CLion is configured to use it directly via `docker run`
+style flags.
+
+### 1. Build the image
+
+```bash
+docker compose build clion-dev
+```
+
+### 2. Add the Docker toolchain
+
+**Settings → Build, Execution, Deployment → Toolchains → + → Docker**
+
+- **Image**: `git4cad-clion-dev:latest`
+- **Container Settings**:
+  ```
+  --entrypoint= --rm -v <repo>/server:/src -v <repo>/data:/data
+  --network git4cad_internal --cap-add=SYS_PTRACE
+  --security-opt seccomp=unconfined
+  -e G4C_DATA_DIR=/data -e G4C_HOST=0.0.0.0 -e G4C_PORT=3000
+  -e G4C_CAD_WORKERS=4 -e G4C_DEBUG=true
+  -e G4C_SEAWEEDFS_FILER_URL=http://seaweedfs:8888
+  -e G4C_SEAWEEDFS_PUBLIC_PREFIX=/seaweed
+  ```
+  Deliberately no `-p` — CLion talks to the container via the Docker
+  API/`exec`, not a published port. Publishing one just risks colliding
+  with something else on that host port.
+- `--network git4cad_internal` must match your actual compose project's
+  network name (check `docker network ls` if you've renamed the project
+  directory — compose derives it from the folder name).
+
+**⚠️ `--cap-add=SYS_PTRACE --security-opt seccomp=unconfined` is required, not optional.**
+Without it, gdb can't `ptrace` the debuggee — Docker's default seccomp
+profile and dropped capabilities block it — and CLion surfaces this as a
+generic **"Unsupported execution environment"** error on Debug, with no
+mention of ptrace at all. If you hit that error, check these flags first
+before anything else (execution targets, run targets, etc. are not the
+cause here).
+
+Open **`server/`** (not the repo root) as the CLion project root, so its
+`CMakeLists.txt` lines up with `/src` above.
+
+### 3. Add a GDB Debug Profile
+
+CLion 2026.2+ moved the debugger out of the toolchain into a separate
+**Debug Profile**, paired independently in the toolbar:
+
+**Settings → Build, Execution, Deployment → Debugger → Debug Profiles** →
+**+** → **GDB** → leave **Executable** empty (CLion resolves `gdb` from the
+toolchain's image automatically) → name it, e.g., "Docker GDB".
+
+In the main toolbar, pick your Docker-toolchain **CMake Profile** and this
+**Debug Profile** — they pair independently, so any CMake profile can be
+run with any compatible debugger.
+
+### 4. Build and debug
+
+Build the `git4cad-server` target (**⌘F9** or the hammer icon), set a
+breakpoint, and hit **Debug**.
+
+### Troubleshooting
+
+- **CMake/Compiler/Debugger all say "Not found"**: the toolchain's
+  **Image** field is probably pointing at `git4cad-server:latest` (the slim
+  *production* runtime image — no compiler, no cmake) instead of
+  `git4cad-clion-dev:latest` (the full `builder`-stage image).
+- **`IMPORTED_LOCATION not set for imported target "libzip::zip"` /
+  `"SQLiteCpp"` on a Debug configure**: `libzip` and `SQLiteCpp` are built
+  from source in `Dockerfile.server` with a fixed `CMAKE_BUILD_TYPE=Release`,
+  so they only ever publish `IMPORTED_LOCATION_RELEASE`. `CMakeLists.txt`'s
+  `CMAKE_MAP_IMPORTED_CONFIG_DEBUG`/`_MINSIZEREL` fall back to `Release` for
+  exactly this reason — if you see this error, that mapping is missing or
+  was reverted.
+- **`docker compose build` fails with `apt-get`... `GPG error: ... At least
+  one invalid signature was encountered`**: before chasing proxies or
+  keyrings, run `docker system df`. This has been caused by Docker
+  Desktop's virtual disk filling up completely, which silently corrupts
+  files `apt-get update` writes and surfaces as a signature-verification
+  failure that has nothing to do with GPG keys. `docker builder prune -af`
+  fixes it.
+- **Stuck build directory / weird CMake errors after switching
+  toolchains**: delete `server/cmake-build-debug` (gitignored, pure build
+  output) and reload the CMake project — a build directory configured
+  against a different/broken toolchain can leave stale state that a fresh
+  reconfigure doesn't fully clear.
+- **A leftover container has some host port bound and a fresh CLion build
+  fails with `port is already allocated`**: CLion's Docker toolchain spins
+  up a throwaway container per build; a crashed or failed one can leave the
+  port claimed. `docker ps -a` to find it, `docker rm` it. Simplest fix if
+  you don't actually need host access to the debug binary: drop any `-p`
+  mapping from Container Settings entirely (see step 2 — it's not needed
+  for CLion to build/run/debug).
+
 ## Architecture notes
 
 - **Git protocol**: Crow validates auth, then forks `git http-backend` as a CGI subprocess, proxying stdin/stdout through pipes. After a successful `git-receive-pack`, libgit2 walks new commits to find CAD file blobs and enqueues them for conversion.

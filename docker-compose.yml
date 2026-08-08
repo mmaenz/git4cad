@@ -52,17 +52,44 @@ services:
   # Full C++ toolchain (cmake/ninja/gdb) + every dependency pre-built from the
   # same `builder` stage the production server image uses — no separate
   # Dockerfile to keep in sync. Source is bind-mounted live; nothing is baked
-  # in or auto-run. Point CLion's Docker Compose toolchain at this service
-  # (Settings → Build, Execution, Deployment → Toolchains → + → Docker
-  # Compose → this file → service "clion-dev"). Open frontend/server as the
-  # CLion project root so its CMakeLists.txt lines up with /src below.
+  # in or auto-run.
+  #
+  # CLion's Docker toolchain can't consume this docker-compose.yml service
+  # directly (it only takes a plain image) — point it at the image this
+  # service builds instead: Settings → Build, Execution, Deployment →
+  # Toolchains → + → Docker → set Image to `git4cad-clion-dev` (build it
+  # first via `docker compose build clion-dev` if it doesn't exist yet), then
+  # replicate this service's volumes/network/env/cap/security in the
+  # toolchain's Container Settings field, e.g.:
+  #   --entrypoint= --rm -v <repo>/server:/src -v <repo>/data:/data
+  #   --network git4cad_internal --cap-add=SYS_PTRACE
+  #   --security-opt seccomp=unconfined
+  #   -e G4C_DATA_DIR=/data -e G4C_HOST=0.0.0.0
+  #   -e G4C_PORT=3000 -e G4C_CAD_WORKERS=4 -e G4C_DEBUG=true
+  #   -e G4C_SEAWEEDFS_FILER_URL=http://seaweedfs:8888
+  #   -e G4C_SEAWEEDFS_PUBLIC_PREFIX=/seaweed
+  # The cap/security-opt flags matter for gdb specifically — its default
+  # seccomp profile and dropped capabilities block ptrace, which gdb needs
+  # to attach to the debuggee.
+  # Deliberately no `-p` here — CLion talks to the toolchain container via
+  # the Docker API/exec, not a published port; adding one just risks
+  # colliding with whatever else is on that host port.
+  # Open server/ (not the repo root) as the CLion project root so its
+  # CMakeLists.txt lines up with /src above.
+  #
   # Gated behind the "dev" profile so `docker compose up` never starts it by
-  # accident; CLion starts/stops it itself when you build/run/debug.
+  # accident.
   clion-dev:
     build:
       context: .
       dockerfile: Dockerfile.server
       target: builder
+    # gdb/gdbserver need to ptrace the debuggee — Docker's default seccomp
+    # profile and dropped capabilities block that.
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
     volumes:
       - ./server:/src
       - ./data:/data

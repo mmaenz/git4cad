@@ -15,9 +15,12 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Ubuntu apt packages are built without a cmake build-type config (suffix "None").
 # Map our build types so cmake resolves IMPORTED_LOCATION for all apt-installed targets.
+# libzip and SQLiteCpp are built from source in Dockerfile.server with a fixed
+# CMAKE_BUILD_TYPE=Release, so they only ever publish an IMPORTED_LOCATION_RELEASE —
+# Debug/MinSizeRel builds need "Release" as a fallback to find them too.
 set(CMAKE_MAP_IMPORTED_CONFIG_RELEASE    "None;Release;RelWithDebInfo;")
-set(CMAKE_MAP_IMPORTED_CONFIG_DEBUG      "None;Debug;RelWithDebInfo;")
-set(CMAKE_MAP_IMPORTED_CONFIG_MINSIZEREL "None;MinSizeRel;RelWithDebInfo;")
+set(CMAKE_MAP_IMPORTED_CONFIG_DEBUG      "None;Debug;RelWithDebInfo;Release;")
+set(CMAKE_MAP_IMPORTED_CONFIG_MINSIZEREL "None;MinSizeRel;RelWithDebInfo;Release;")
 
 # ─── OpenCASCADE ─────────────────────────────────────────────────────────────
 # Supports two install paths:
