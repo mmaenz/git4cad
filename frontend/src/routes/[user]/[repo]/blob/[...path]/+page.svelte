@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { page } from '$app/stores';
-	import { onMount, onDestroy } from 'svelte';
+	import { onDestroy } from 'svelte';
+	import { goto } from '$app/navigation';
 	import {
 		getBlobUrl,
 		getGlbUrl,
@@ -11,18 +11,22 @@
 		type RepoInfo
 	} from '$lib/api';
 	import GltfViewer from '$lib/components/GltfViewer.svelte';
+	import CodeBrowserLayout from '$lib/components/CodeBrowserLayout.svelte';
+	import type { PageProps } from './$types';
 
-	let user = $derived($page.params.user);
-	let repo = $derived($page.params.repo);
+	let { params }: PageProps = $props();
+	let user = $derived(params.user);
+	let repo = $derived(params.repo);
 
 	// [...path] = "ref/path/to/file"
-	let rawPath = $derived($page.params.path ?? '');
+	let rawPath = $derived(params.path);
 	let ref = $derived(rawPath.split('/')[0] ?? 'main');
 	let filePath = $derived(rawPath.split('/').slice(1).join('/'));
 	let fileName = $derived(filePath.split('/').pop() ?? '');
 
 	let is3d = $derived(is3DFile(fileName));
 
+	let repoInfo = $state<RepoInfo | null>(null);
 	let textContent = $state<string | null>(null);
 	let glbStatus = $state<'pending' | 'processing' | 'ready' | 'error'>('pending');
 	let glbUrl = $state('');
@@ -32,6 +36,19 @@
 	let commitSha = $state('');
 
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
+
+	// Repo-relative path of the part last clicked in the 3D viewer (may differ
+	// from `filePath` when viewing a resolved linked assembly) — drives the
+	// sidebar's highlight/auto-expand while it's set.
+	let selectedGeometryPath = $state<string | null>(null);
+
+	function handleSelectPart(path: string) {
+		selectedGeometryPath = path;
+	}
+
+	function handleOpenPart(path: string) {
+		goto(`/${user}/${repo}/blob/${ref}/${path}`);
+	}
 
 	// Build line-numbered content
 	let lines = $derived(textContent !== null ? textContent.split('\n') : []);
@@ -68,10 +85,13 @@
 	}
 
 	async function loadFile() {
+		stopPolling();
 		loading = true;
 		error = '';
 		textContent = null;
 		glbUrl = '';
+		glbStatus = 'pending';
+		selectedGeometryPath = null;
 
 		try {
 			const sha = await getCommitShaForRef();
@@ -130,7 +150,23 @@
 		}
 	}
 
-	onMount(loadFile);
+	// Re-fetch whenever the viewed file changes (SvelteKit reuses this
+	// component across client-side navigations within the same route).
+	$effect(() => {
+		const _u = user, _r = repo, _ref = ref, _path = filePath;
+		loadFile();
+	});
+
+	// Repo-level settings (e.g. viewer up-axis) only change with the repo, not per file.
+	$effect(() => {
+		const targetUser = user, targetRepo = repo;
+		getRepo(targetUser, targetRepo)
+			.then((info) => {
+				if (targetUser === user && targetRepo === repo) repoInfo = info;
+			})
+			.catch(() => {});
+	});
+
 	onDestroy(stopPolling);
 </script>
 
@@ -139,6 +175,7 @@
 </svelte:head>
 
 <div class="blob-page">
+<CodeBrowserLayout {user} {repo} {ref} selectedPath={selectedGeometryPath ?? filePath}>
 	<!-- Breadcrumb -->
 	<div class="breadcrumb mb-3">
 		{#each breadcrumbParts as part, i (part.href)}
@@ -180,7 +217,18 @@
 				</a>
 			</div>
 		</div>
-		<GltfViewer {glbUrl} status={glbStatus} />
+		<GltfViewer
+			{glbUrl}
+			status={glbStatus}
+			zUp={repoInfo?.z_up ?? false}
+			currentFilePath={filePath}
+			{user}
+			{repo}
+			sha={commitSha}
+			resolveLinks={repoInfo?.resolve_links ?? false}
+			onSelectPart={handleSelectPart}
+			onOpenPart={handleOpenPart}
+		/>
 	{:else}
 		<!-- Text viewer -->
 		<div class="file-header">
@@ -220,6 +268,7 @@
 			</table>
 		</div>
 	{/if}
+</CodeBrowserLayout>
 </div>
 
 <style>

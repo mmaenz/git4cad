@@ -504,6 +504,19 @@ void GitHttpRoutes::register_routes(crow::SimpleApp& app) {
             std::string first, std::string rest) {
         const std::size_t slash = rest.find('/');
         if (slash == std::string::npos) {
+            // No git sub-path (e.g. "/info/refs", "/git-upload-pack") — real
+            // git clients always request one of those, so this is a browser
+            // visiting the bare clone URL directly (the repo page's own
+            // "Clone" box shows exactly this string). Send it to the
+            // human-readable repo page instead of a bare 404.
+            if (req.method == crow::HTTPMethod::Get && rest.ends_with(".git")) {
+                const std::string repo_base = rest.substr(0, rest.size() - 4);
+                res.code = 302;
+                res.add_header("Location", "/" + first + "/" + repo_base);
+                add_cors(res);
+                res.end();
+                return;
+            }
             res.code = 404; add_cors(res); res.end("Not Found"); return;
         }
         const std::string repo     = rest.substr(0, slash);

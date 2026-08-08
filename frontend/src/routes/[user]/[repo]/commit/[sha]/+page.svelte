@@ -1,11 +1,12 @@
 <script lang="ts">
-	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { getCommit, relativeTime, type CommitInfo } from '$lib/api';
+	import type { PageProps } from './$types';
 
-	let user = $derived($page.params.user);
-	let repo = $derived($page.params.repo);
-	let sha = $derived($page.params.sha);
+	let { params }: PageProps = $props();
+	let user = $derived(params.user);
+	let repo = $derived(params.repo);
+	let sha = $derived(params.sha);
 
 	let commit = $state<CommitInfo | null>(null);
 	let loading = $state(true);

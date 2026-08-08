@@ -34,15 +34,17 @@ struct UserStore::Impl {
 
 // ─── UserStore ───────────────────────────────────────────────────────────────
 
-UserStore::UserStore(fs::path path) {
+std::optional<UserStore> UserStore::open(fs::path path) {
     try {
         fs::create_directories(path.parent_path());
-        impl_ = std::make_unique<Impl>(path);
+        return UserStore(std::make_unique<Impl>(path));
     } catch (const SQLite::Exception& e) {
         spdlog::error("UserStore: failed to open '{}': {}", path.string(), e.what());
-        throw;
+        return std::nullopt;
     }
 }
+
+UserStore::UserStore(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 
 UserStore::~UserStore() = default;
 

@@ -1,12 +1,14 @@
 #include "Pipeline.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 
+#include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
 #include "StepConverter.hpp"
-#include "FcstdConverter.hpp"
+#include "FCStdConverter.hpp"
 #include "GltfWriter.hpp"
 #include "util/Hex.hpp"
 
@@ -23,6 +25,23 @@ std::string CadPipeline::job_key(const std::string& user,
     const std::string path_hash = util::sha256_hex(file_path.data(), file_path.size());
     return user + "/" + repo + "/" + sha + "/" + path_hash.substr(0, 16);
 }
+
+namespace {
+
+std::string links_to_json(const std::vector<FcstdLinkRef>& links) {
+    if (links.empty()) return {};
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& l : links) {
+        arr.push_back({
+            {"file", l.file},
+            {"px", l.px}, {"py", l.py}, {"pz", l.pz},
+            {"qw", l.qw}, {"qx", l.qx}, {"qy", l.qy}, {"qz", l.qz}
+        });
+    }
+    return arr.dump();
+}
+
+} // namespace
 
 // ─── Constructor / Destructor ────────────────────────────────────────────────
 
@@ -87,6 +106,15 @@ JobStatus CadPipeline::status(const std::string& user,
     return JobStatus::Pending;
 }
 
+bool CadPipeline::has_tracked_job(const std::string& user,
+                                   const std::string& repo,
+                                   const std::string& sha,
+                                   const std::string& file_path) const {
+    const std::string key = job_key(user, repo, sha, file_path);
+    std::lock_guard lk{status_mtx_};
+    return status_map_.count(key) > 0;
+}
+
 // ─── Worker ──────────────────────────────────────────────────────────────────
 
 void CadPipeline::worker_loop() {
@@ -124,7 +152,7 @@ void CadPipeline::worker_loop() {
     }
 }
 
-void CadPipeline::process_job(const CadJob& job) {
+void CadPipeline::process_job(const CadJob& job) const {
     spdlog::info("CadPipeline: converting {}/{}/{}/{}",
                  job.user, job.repo, job.sha, job.file_path);
 
@@ -143,10 +171,18 @@ void CadPipeline::process_job(const CadJob& job) {
                    [](unsigned char c){ return std::tolower(c); });
 
     std::optional<Handle(TDocStd_Document)> doc_opt{};
+    std::string links_json{};
+
     if (lower_path.ends_with(".step") || lower_path.ends_with(".stp")) {
         doc_opt = cad::read_step(job.blob_data);
     } else if (lower_path.ends_with(".fcstd")) {
-        doc_opt = cad::read_fcstd(job.blob_data);
+        // App::Link references are never followed here — they're embedded as
+        // glTF metadata for the frontend to resolve (fetch each linked
+        // file's own GLB and compose it into the scene client-side).
+        if (auto fcstd_result = cad::read_fcstd(job.blob_data, job.file_path)) {
+            doc_opt    = fcstd_result->doc;
+            links_json = links_to_json(fcstd_result->links);
+        }
     } else {
         spdlog::warn("CadPipeline: unsupported file type '{}'", job.file_path);
         return;
@@ -156,7 +192,7 @@ void CadPipeline::process_job(const CadJob& job) {
         throw std::runtime_error("CAD read failed: " + job.file_path);
     }
 
-    if (!write_glb(*doc_opt, tmp_glb)) {
+    if (!write_glb(*doc_opt, tmp_glb, links_json)) {
         throw std::runtime_error("GLB write failed: " + tmp_glb.string());
     }
 

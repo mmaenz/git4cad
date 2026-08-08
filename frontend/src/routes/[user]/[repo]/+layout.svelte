@@ -3,11 +3,12 @@
 	import { onMount } from 'svelte';
 	import { authStore } from '$lib/stores/auth';
 	import { getRepo, type RepoInfo } from '$lib/api';
+	import type { LayoutProps } from './$types';
 
-	let { children } = $props();
+	let { children, params }: LayoutProps = $props();
 
-	let user = $derived($page.params.user);
-	let repo = $derived($page.params.repo);
+	let user = $derived(params.user);
+	let repo = $derived(params.repo);
 
 	let repoInfo = $state<RepoInfo | null>(null);
 	let loading = $state(true);

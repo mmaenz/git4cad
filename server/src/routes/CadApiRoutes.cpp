@@ -5,6 +5,8 @@
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
+#include "git/Repository.hpp"
+
 namespace api {
 
 using json = nlohmann::json;
@@ -34,6 +36,31 @@ CadApiRoutes::CadApiRoutes(const g4c::Config&        config,
                              storage::SeaweedFsClient& seaweedfs)
     : config_(config), pipeline_(pipeline), seaweedfs_(seaweedfs) {}
 
+void CadApiRoutes::lazy_enqueue_if_untracked(const std::string& user,
+                                              const std::string& repo,
+                                              const std::string& sha,
+                                              const std::string& file_path) const {
+    if (pipeline_.has_tracked_job(user, repo, sha, file_path)) return;
+
+    const auto repo_path = config_.repos_dir() / user / (repo + ".git");
+    auto maybe_repo = git::Repository::open(repo_path);
+    if (!maybe_repo) return;
+
+    auto blob = maybe_repo->read_blob_at_commit(sha, file_path);
+    if (!blob) return;
+
+    cad::CadJob job{};
+    job.user      = user;
+    job.repo      = repo;
+    job.sha       = sha;
+    job.file_path = file_path;
+    job.blob_data = std::move(*blob);
+
+    spdlog::info("CadApiRoutes: lazily re-enqueuing untracked job {}/{}/{}/{}",
+                 user, repo, sha, file_path);
+    pipeline_.enqueue(std::move(job));
+}
+
 void CadApiRoutes::register_routes(crow::SimpleApp& app) {
 
     // ── GET /api/v1/repos/:user/:repo/glb/:sha/* ────────────────────────────
@@ -54,6 +81,7 @@ void CadApiRoutes::register_routes(crow::SimpleApp& app) {
         if (is_status)
             file_path = file_path.substr(0, file_path.size() - kStatusSuffix.size());
 
+        lazy_enqueue_if_untracked(user, repo, sha, file_path);
         const cad::JobStatus s = pipeline_.status(user, repo, sha, file_path);
 
         if (is_status) {
