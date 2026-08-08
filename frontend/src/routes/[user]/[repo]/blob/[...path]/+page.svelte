@@ -226,6 +226,7 @@
 			{repo}
 			sha={commitSha}
 			resolveLinks={repoInfo?.resolve_links ?? false}
+			groupChildren={repoInfo?.group_child_assemblies ?? false}
 			onSelectPart={handleSelectPart}
 			onOpenPart={handleOpenPart}
 		/>

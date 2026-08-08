@@ -26,6 +26,7 @@
 
 	// 3D viewer linked assembly
 	let togglingResolveLinks = $state(false);
+	let togglingGroupChildren = $state(false);
 
 	// Collaborators
 	let addMemberName    = $state('');
@@ -85,6 +86,18 @@
 			error = e.message || 'Failed to update assembly setting';
 		} finally {
 			togglingResolveLinks = false;
+		}
+	}
+
+	async function setGroupChildren(value: boolean) {
+		if (!repoInfo || repoInfo.group_child_assemblies === value) return;
+		togglingGroupChildren = true;
+		try {
+			repoInfo = await updateRepo(user, repo, { group_child_assemblies: value });
+		} catch (e: any) {
+			error = e.message || 'Failed to update assembly grouping';
+		} finally {
+			togglingGroupChildren = false;
 		}
 	}
 
@@ -238,6 +251,49 @@
 					{togglingResolveLinks ? '...' : repoInfo.resolve_links ? 'Show file only' : 'Show full assembly'}
 				</button>
 			</div>
+
+			{#if repoInfo.resolve_links}
+				<div class="visibility-row viewer-row-divider">
+					<div class="visibility-info">
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<rect x="9" y="3" width="6" height="6" rx="1"/>
+							<rect x="3" y="15" width="6" height="6" rx="1"/>
+							<rect x="15" y="15" width="6" height="6" rx="1"/>
+							<path d="M12 9v3M6 15v-3h12v3"/>
+						</svg>
+						<div>
+							<strong>Assembly grouping</strong>
+							<p>
+								{#if repoInfo.group_child_assemblies}
+									Only <strong>next-level children</strong> are individually selectable — each
+									child's own sub-assemblies are shown but grouped as one clickable child.
+								{:else}
+									The <strong>whole assembly tree</strong> is shown, with every nested part
+									individually selectable.
+								{/if}
+							</p>
+						</div>
+					</div>
+					<div class="segmented-control" role="group" aria-label="Assembly grouping">
+						<button
+							class="segmented-btn"
+							class:active={!repoInfo.group_child_assemblies}
+							disabled={togglingGroupChildren}
+							onclick={() => setGroupChildren(false)}
+						>
+							Whole tree
+						</button>
+						<button
+							class="segmented-btn"
+							class:active={repoInfo.group_child_assemblies}
+							disabled={togglingGroupChildren}
+							onclick={() => setGroupChildren(true)}
+						>
+							Next children only
+						</button>
+					</div>
+				</div>
+			{/if}
 		</div>
 	</section>
 
@@ -404,6 +460,38 @@
 		color: var(--color-text-muted);
 		margin: 0;
 		line-height: 1.5;
+	}
+
+	.segmented-control {
+		display: flex;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+		overflow: hidden;
+		flex-shrink: 0;
+	}
+
+	.segmented-btn {
+		background: none;
+		border: none;
+		padding: 6px 12px;
+		font-size: 13px;
+		color: var(--color-text-muted);
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	.segmented-btn + .segmented-btn {
+		border-left: 1px solid var(--color-border);
+	}
+
+	.segmented-btn.active {
+		background-color: var(--color-accent);
+		color: #fff;
+	}
+
+	.segmented-btn:disabled {
+		cursor: default;
+		opacity: 0.6;
 	}
 
 	/* Members */

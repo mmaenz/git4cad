@@ -27,24 +27,29 @@ public:
     /// Must be called after all threads have stopped (wraps curl_global_cleanup).
     static void global_shutdown() noexcept;
 
-    /// Upload a local file to SeaweedFS. Returns true on HTTP 2xx.
+    /// Upload a local file to SeaweedFS. `light` selects the lightweight
+    /// hull-GLB variant, stored alongside the full one as a `_light.glb`
+    /// sibling. Returns true on HTTP 2xx.
     [[nodiscard]] bool upload(const std::string& user,
                               const std::string& repo,
                               const std::string& sha,
                               const std::string& file_path,
-                              const fs::path&    local_file) const noexcept;
+                              const fs::path&    local_file,
+                              bool               light = false) const noexcept;
 
     /// HEAD request to check if the GLB exists in SeaweedFS.
     [[nodiscard]] bool exists(const std::string& user,
                               const std::string& repo,
                               const std::string& sha,
-                              const std::string& file_path) const noexcept;
+                              const std::string& file_path,
+                              bool               light = false) const noexcept;
 
     /// Return the nginx-proxied public URL for a 302 redirect.
     [[nodiscard]] std::string public_url(const std::string& user,
                                          const std::string& repo,
                                          const std::string& sha,
-                                         const std::string& file_path) const;
+                                         const std::string& file_path,
+                                         bool               light = false) const;
 
     // ── Git LFS object storage ────────────────────────────────────────────────
     // LFS objects are stored at filer path: /lfs/{user}/{repo}/{oid}
@@ -72,7 +77,8 @@ private:
     [[nodiscard]] static std::string filer_subpath(const std::string& user,
                                                     const std::string& repo,
                                                     const std::string& sha,
-                                                    const std::string& file_path);
+                                                    const std::string& file_path,
+                                                    bool               light = false);
 
     std::string filer_base_url_;
     std::string public_prefix_;

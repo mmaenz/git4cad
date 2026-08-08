@@ -53,7 +53,7 @@ if(NOT OpenCASCADE_FOUND)
         set(OpenCASCADE_LIBRARIES
             TKernel TKMath
             TKBRep TKG3d TKG2d TKGeomBase
-            TKTopAlgo TKGeomAlgo TKBool TKBO TKMesh
+            TKTopAlgo TKGeomAlgo TKBool TKBO TKMesh TKOffset
             TKSTEP TKSTEP209 TKSTEPAttr TKSTEPBase TKXSBase TKXDESTEP
             TKCAF TKLCAF TKCDF TKXCAF TKRWMesh
             TKBinXCAF TKXmlXCAF

@@ -39,8 +39,9 @@ CadApiRoutes::CadApiRoutes(const g4c::Config&        config,
 void CadApiRoutes::lazy_enqueue_if_untracked(const std::string& user,
                                               const std::string& repo,
                                               const std::string& sha,
-                                              const std::string& file_path) const {
-    if (pipeline_.has_tracked_job(user, repo, sha, file_path)) return;
+                                              const std::string& file_path,
+                                              bool               light) const {
+    if (pipeline_.has_tracked_job(user, repo, sha, file_path, light)) return;
 
     const auto repo_path = config_.repos_dir() / user / (repo + ".git");
     auto maybe_repo = git::Repository::open(repo_path);
@@ -50,14 +51,15 @@ void CadApiRoutes::lazy_enqueue_if_untracked(const std::string& user,
     if (!blob) return;
 
     cad::CadJob job{};
-    job.user      = user;
-    job.repo      = repo;
-    job.sha       = sha;
-    job.file_path = file_path;
-    job.blob_data = std::move(*blob);
+    job.user       = user;
+    job.repo       = repo;
+    job.sha        = sha;
+    job.file_path  = file_path;
+    job.blob_data  = std::move(*blob);
+    job.with_light = light;
 
-    spdlog::info("CadApiRoutes: lazily re-enqueuing untracked job {}/{}/{}/{}",
-                 user, repo, sha, file_path);
+    spdlog::info("CadApiRoutes: lazily re-enqueuing untracked {} job {}/{}/{}/{}",
+                 light ? "light" : "full", user, repo, sha, file_path);
     pipeline_.enqueue(std::move(job));
 }
 
@@ -69,7 +71,7 @@ void CadApiRoutes::register_routes(crow::SimpleApp& app) {
     // by detecting the "/status" suffix ourselves.
     CROW_ROUTE(app, "/api/v1/repos/<string>/<string>/glb/<string>/<path>")
     .methods(crow::HTTPMethod::Get)
-    ([this](const crow::request&,
+    ([this](const crow::request& req,
             crow::response& res,
             const std::string& user, const std::string& repo,
             const std::string& sha,  std::string file_path) {
@@ -81,8 +83,10 @@ void CadApiRoutes::register_routes(crow::SimpleApp& app) {
         if (is_status)
             file_path = file_path.substr(0, file_path.size() - kStatusSuffix.size());
 
-        lazy_enqueue_if_untracked(user, repo, sha, file_path);
-        const cad::JobStatus s = pipeline_.status(user, repo, sha, file_path);
+        const bool light = req.url_params.get("light") != nullptr;
+
+        lazy_enqueue_if_untracked(user, repo, sha, file_path, light);
+        const cad::JobStatus s = pipeline_.status(user, repo, sha, file_path, light);
 
         if (is_status) {
             res.code = 200;
@@ -103,7 +107,7 @@ void CadApiRoutes::register_routes(crow::SimpleApp& app) {
         }
 
         // Redirect browser directly to SeaweedFS via nginx proxy.
-        const std::string url = seaweedfs_.public_url(user, repo, sha, file_path);
+        const std::string url = seaweedfs_.public_url(user, repo, sha, file_path, light);
         res.code = 302;
         res.add_header("Location", url);
         add_cors(res);

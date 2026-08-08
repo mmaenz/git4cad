@@ -49,9 +49,10 @@ json repo_info(const g4c::Config& cfg,
                const std::string& user,
                const std::string& repo_name,
                const fs::path&    repo_path,
-               bool               is_priv       = false,
-               bool               z_up          = false,
-               bool               resolve_links = false) {
+               bool               is_priv                 = false,
+               bool               z_up                    = false,
+               bool               resolve_links           = false,
+               bool               group_child_assemblies  = false) {
     std::string default_branch = "main";
     bool        is_empty       = true;
 
@@ -61,15 +62,16 @@ json repo_info(const g4c::Config& cfg,
     }
 
     return json{
-        {"name",           repo_name},
-        {"owner",          user},
-        {"description",    ""},
-        {"clone_url",      clone_url(cfg, user, repo_name)},
-        {"default_branch", default_branch},
-        {"empty",          is_empty},
-        {"private",        is_priv},
-        {"z_up",           z_up},
-        {"resolve_links",  resolve_links}
+        {"name",                    repo_name},
+        {"owner",                   user},
+        {"description",             ""},
+        {"clone_url",               clone_url(cfg, user, repo_name)},
+        {"default_branch",          default_branch},
+        {"empty",                   is_empty},
+        {"private",                 is_priv},
+        {"z_up",                    z_up},
+        {"resolve_links",           resolve_links},
+        {"group_child_assemblies",  group_child_assemblies}
     };
 }
 
@@ -186,11 +188,12 @@ void RepoApiRoutes::register_repo_crud_routes(crow::SimpleApp& app) {
 
                 if (!repos_.can_read(owner, name, auth_user)) continue;
 
-                const bool is_priv       = repos_.is_private(owner, name);
-                const bool z_up          = repos_.is_z_up(owner, name);
-                const bool resolve_links = repos_.is_resolve_links(owner, name);
-                repos_arr.push_back(repo_info(config_, owner, name,
-                                              repo_entry.path(), is_priv, z_up, resolve_links));
+                const bool is_priv                = repos_.is_private(owner, name);
+                const bool z_up                   = repos_.is_z_up(owner, name);
+                const bool resolve_links          = repos_.is_resolve_links(owner, name);
+                const bool group_child_assemblies = repos_.is_group_child_assemblies(owner, name);
+                repos_arr.push_back(repo_info(config_, owner, name, repo_entry.path(),
+                                              is_priv, z_up, resolve_links, group_child_assemblies));
             }
         }
         return json_response(200, repos_arr);
@@ -240,10 +243,12 @@ void RepoApiRoutes::register_repo_crud_routes(crow::SimpleApp& app) {
         const auto repo_path = config_.repos_dir() / user / (repo + ".git");
         if (!fs::exists(repo_path)) return error_response(404, "Repository not found");
 
-        const bool is_priv       = repos_.is_private(user, repo);
-        const bool z_up          = repos_.is_z_up(user, repo);
-        const bool resolve_links = repos_.is_resolve_links(user, repo);
-        return json_response(200, repo_info(config_, user, repo, repo_path, is_priv, z_up, resolve_links));
+        const bool is_priv                = repos_.is_private(user, repo);
+        const bool z_up                   = repos_.is_z_up(user, repo);
+        const bool resolve_links          = repos_.is_resolve_links(user, repo);
+        const bool group_child_assemblies = repos_.is_group_child_assemblies(user, repo);
+        return json_response(200, repo_info(config_, user, repo, repo_path,
+                                            is_priv, z_up, resolve_links, group_child_assemblies));
     });
 
     // ── PATCH /api/v1/repos/:user/:repo ─────────────────────────────────────
@@ -268,11 +273,15 @@ void RepoApiRoutes::register_repo_crud_routes(crow::SimpleApp& app) {
             repos_.set_z_up(user, repo, body["z_up"].get<bool>());
         if (body.contains("resolve_links"))
             repos_.set_resolve_links(user, repo, body["resolve_links"].get<bool>());
+        if (body.contains("group_child_assemblies"))
+            repos_.set_group_child_assemblies(user, repo, body["group_child_assemblies"].get<bool>());
 
-        const bool is_priv       = repos_.is_private(user, repo);
-        const bool z_up          = repos_.is_z_up(user, repo);
-        const bool resolve_links = repos_.is_resolve_links(user, repo);
-        return json_response(200, repo_info(config_, user, repo, repo_path, is_priv, z_up, resolve_links));
+        const bool is_priv                = repos_.is_private(user, repo);
+        const bool z_up                   = repos_.is_z_up(user, repo);
+        const bool resolve_links          = repos_.is_resolve_links(user, repo);
+        const bool group_child_assemblies = repos_.is_group_child_assemblies(user, repo);
+        return json_response(200, repo_info(config_, user, repo, repo_path,
+                                            is_priv, z_up, resolve_links, group_child_assemblies));
     });
 
     // ── DELETE /api/v1/repos/:user/:repo ────────────────────────────────────

@@ -16,6 +16,11 @@ export interface RepoInfo {
 	private: boolean;
 	z_up: boolean;
 	resolve_links: boolean;
+	// Only meaningful when resolve_links is true — when true, the viewer
+	// stops individually tagging parts past the first level of linked
+	// children, grouping each child's whole sub-assembly into one
+	// clickable/selectable unit.
+	group_child_assemblies: boolean;
 }
 
 export interface MemberInfo {
@@ -146,7 +151,7 @@ export async function createRepo(
 export async function updateRepo(
 	user: string,
 	repo: string,
-	patch: { private?: boolean; z_up?: boolean; resolve_links?: boolean }
+	patch: { private?: boolean; z_up?: boolean; resolve_links?: boolean; group_child_assemblies?: boolean }
 ): Promise<RepoInfo> {
 	const res = await apiFetch(
 		`/api/v1/repos/${encodeURIComponent(user)}/${encodeURIComponent(repo)}`,
@@ -257,18 +262,27 @@ export function getBlobUrl(user: string, repo: string, ref: string, path: string
 	return `${getApiUrl()}/api/v1/repos/${encodeURIComponent(user)}/${encodeURIComponent(repo)}/blob/${encodeURIComponent(ref)}/${path}`;
 }
 
-export function getGlbUrl(user: string, repo: string, sha: string, path: string): string {
-	return `${getApiUrl()}/api/v1/repos/${encodeURIComponent(user)}/${encodeURIComponent(repo)}/glb/${sha}/${path}`;
+export function getGlbUrl(
+	user: string,
+	repo: string,
+	sha: string,
+	path: string,
+	light = false
+): string {
+	const suffix = light ? '?light=1' : '';
+	return `${getApiUrl()}/api/v1/repos/${encodeURIComponent(user)}/${encodeURIComponent(repo)}/glb/${sha}/${path}${suffix}`;
 }
 
 export async function getGlbStatus(
 	user: string,
 	repo: string,
 	sha: string,
-	path: string
+	path: string,
+	light = false
 ): Promise<{ status: 'pending' | 'processing' | 'ready' | 'error' }> {
+	const suffix = light ? '?light=1' : '';
 	const res = await apiFetch(
-		`/api/v1/repos/${encodeURIComponent(user)}/${encodeURIComponent(repo)}/glb/${sha}/${path}/status`
+		`/api/v1/repos/${encodeURIComponent(user)}/${encodeURIComponent(repo)}/glb/${sha}/${path}/status${suffix}`
 	);
 	if (!res.ok) throw new Error(`Failed to get GLB status: ${res.status}`);
 	return res.json();

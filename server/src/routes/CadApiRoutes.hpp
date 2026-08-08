@@ -21,14 +21,17 @@ private:
     cad::CadPipeline&         pipeline_;
     storage::SeaweedFsClient& seaweedfs_;
 
-    // Best-effort recovery for a job the pipeline has never seen (e.g. the
-    // original push-time enqueue was lost to a server restart before the
-    // GLB finished uploading). No-op if the job is already tracked or the
-    // blob can't be read. Safe to call on every status poll.
+    // Best-effort recovery for a job/variant the pipeline has never seen —
+    // either the original push-time enqueue was lost to a server restart
+    // before the GLB finished uploading, or (for `light`) the repo had
+    // "full assembly" off at push time and the viewer is now asking for
+    // the light variant for the first time. No-op if already tracked or
+    // the blob can't be read. Safe to call on every status poll.
     void lazy_enqueue_if_untracked(const std::string& user,
                                    const std::string& repo,
                                    const std::string& sha,
-                                   const std::string& file_path) const;
+                                   const std::string& file_path,
+                                   bool               light) const;
 };
 
 } // namespace api

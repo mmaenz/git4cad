@@ -29,6 +29,14 @@
 		// When true, FreeCAD App::Link references embedded in the GLB's
 		// asset.extras.g4c_links are fetched and merged into the scene.
 		resolveLinks?: boolean;
+		// Only relevant when resolveLinks is true. When true, only the direct
+		// (next-level) linked children of the current file are individually
+		// selectable — each child's own sub-assemblies are still loaded and
+		// rendered, but merged into that child as one clickable unit instead
+		// of every nested part being selectable on its own. When false, the
+		// whole assembly tree is resolved with every part individually
+		// selectable.
+		groupChildren?: boolean;
 		// Fired on a plain click on a part — the repo-relative path of the
 		// file that defines the clicked geometry.
 		onSelectPart?: (path: string) => void;
@@ -46,6 +54,7 @@
 		repo,
 		sha,
 		resolveLinks = false,
+		groupChildren = false,
 		onSelectPart,
 		onOpenPart
 	}: Props = $props();
@@ -67,6 +76,8 @@
 	// already loaded without links. Tracking it lets the reload effect below
 	// catch that and re-load with the links merged in.
 	let loadedResolveLinks = $state(false);
+	// groupChildren value the current/in-flight load used — see loadedResolveLinks.
+	let loadedGroupChildren = $state(false);
 
 	function disposeObject3D(object: THREE.Object3D): void {
 		object.traverse((child: THREE.Object3D) => {
@@ -118,10 +129,14 @@
 	// Polls a linked file's own conversion status — GET .../glb/:sha/:path/status
 	// also lazily (re-)enqueues conversion server-side if it was never seen,
 	// same as the primary file, so this doesn't need to trigger anything itself.
-	async function waitForGlbReady(path: string): Promise<boolean> {
+	// `light` requests the lightweight hull variant's status — linked parts
+	// always load light (see loadLinkedParts below), so a repo that had
+	// "full assembly" off at push time gets its light GLBs generated here,
+	// on first view, rather than never.
+	async function waitForGlbReady(path: string, light: boolean): Promise<boolean> {
 		for (let attempt = 0; attempt < 60; attempt++) {
 			try {
-				const result = await getGlbStatus(user, repo, sha, path);
+				const result = await getGlbStatus(user, repo, sha, path, light);
 				if (result.status === 'ready') return true;
 				if (result.status === 'error') return false;
 			} catch {
@@ -136,10 +151,26 @@
 	// into the scene under `parentGroup`, positioned by the link's placement —
 	// no server-side re-conversion of linked geometry involved. Recurses for
 	// links-of-links, guarding against cycles.
+	//
+	// Every linked part, at every depth, loads its lightweight hull variant
+	// — only the file you've explicitly opened (the root, via `glbUrl`)
+	// renders full detail. Double-clicking a part navigates to it and makes
+	// *it* the new root, loaded full, so "only what's explicitly open is
+	// full detail" falls out of navigation rather than needing any
+	// in-scene swap here.
+	//
+	// `tagThisLevel` controls whether the children created at this call get
+	// their own g4cPartPath (making them individually selectable). In
+	// grouped mode, only the first level of children is tagged; deeper
+	// recursion still loads and renders the geometry but leaves it untagged,
+	// so resolvePart's walk-up-to-nearest-tagged-ancestor logic naturally
+	// attributes clicks anywhere in a child's sub-assembly to that child.
 	async function loadLinkedParts(
 		parentGroup: THREE.Object3D,
 		links: LinkRef[],
-		visited: Set<string>
+		visited: Set<string>,
+		tagThisLevel: boolean,
+		groupChildren: boolean
 	): Promise<void> {
 		await Promise.all(
 			links.map(async (link) => {
@@ -148,21 +179,27 @@
 				childVisited.add(link.file);
 
 				try {
-					const ready = await waitForGlbReady(link.file);
+					const ready = await waitForGlbReady(link.file, true);
 					if (!ready) return;
 
-					const childUrl = getGlbUrl(user, repo, sha, link.file);
+					const childUrl = getGlbUrl(user, repo, sha, link.file, true);
 					const childGltf = await loadGltf(childUrl);
 
 					const childGroup = new THREE.Group();
-					childGroup.userData.g4cPartPath = link.file;
+					if (tagThisLevel) childGroup.userData.g4cPartPath = link.file;
 					childGroup.add(childGltf.scene);
 					applyLinkPlacement(childGroup, link);
 					parentGroup.add(childGroup);
 
 					const nestedLinks = parseLinks(childGltf);
 					if (nestedLinks.length > 0) {
-						await loadLinkedParts(childGroup, nestedLinks, childVisited);
+						await loadLinkedParts(
+							childGroup,
+							nestedLinks,
+							childVisited,
+							tagThisLevel && !groupChildren,
+							groupChildren
+						);
 					}
 				} catch (err) {
 					console.error('Failed to load linked part', link.file, err);
@@ -248,8 +285,10 @@
 		if (!renderer) return;
 		const targetUrl = glbUrl;
 		const targetResolveLinks = resolveLinks;
+		const targetGroupChildren = groupChildren;
 		loadedUrl = targetUrl;
 		loadedResolveLinks = targetResolveLinks;
+		loadedGroupChildren = targetGroupChildren;
 
 		try {
 			const gltf = await loadGltf(targetUrl);
@@ -268,8 +307,19 @@
 			if (targetResolveLinks) {
 				const links = parseLinks(gltf);
 				if (links.length > 0) {
-					await loadLinkedParts(rootGroup, links, new Set([currentFilePath]));
-					if (targetUrl !== glbUrl || targetResolveLinks !== resolveLinks) return; // moved on while linked parts were loading
+					await loadLinkedParts(
+						rootGroup,
+						links,
+						new Set([currentFilePath]),
+						true,
+						targetGroupChildren
+					);
+					if (
+						targetUrl !== glbUrl ||
+						targetResolveLinks !== resolveLinks ||
+						targetGroupChildren !== groupChildren
+					)
+						return; // moved on while linked parts were loading
 				}
 			}
 
@@ -281,6 +331,7 @@
 			if (targetUrl === glbUrl) {
 				loadedUrl = '';
 				loadedResolveLinks = false;
+				loadedGroupChildren = false;
 			}
 		}
 	}
@@ -372,7 +423,9 @@
 			status === 'ready' &&
 			renderer &&
 			glbUrl &&
-			(glbUrl !== loadedUrl || resolveLinks !== loadedResolveLinks)
+			(glbUrl !== loadedUrl ||
+				resolveLinks !== loadedResolveLinks ||
+				groupChildren !== loadedGroupChildren)
 		) {
 			loadModel();
 		}

@@ -47,6 +47,18 @@ public:
 
     [[nodiscard]] bool is_resolve_links(const std::string& owner, const std::string& name) const;
 
+    // When resolve_links is on, whether the viewer stops tagging individual
+    // parts past the first level of linked children — each direct child's
+    // own sub-assemblies are still loaded and rendered, but merged into that
+    // child as one clickable/selectable unit instead of each nested part
+    // being selectable on its own. False (default) keeps every part in the
+    // tree individually selectable.
+    void set_group_child_assemblies(const std::string& owner, const std::string& name,
+                                     bool group_child_assemblies);
+
+    [[nodiscard]] bool is_group_child_assemblies(const std::string& owner,
+                                                  const std::string& name) const;
+
     // Returns true if `user` may read (clone/fetch) this repo.
     // Empty user = unauthenticated: only public repos allowed.
     [[nodiscard]] bool can_read(const std::string& owner, const std::string& name,

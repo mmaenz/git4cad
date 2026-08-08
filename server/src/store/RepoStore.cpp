@@ -21,6 +21,7 @@ struct RepoStore::Impl {
                 private INTEGER NOT NULL DEFAULT 0,
                 z_up    INTEGER NOT NULL DEFAULT 0,
                 resolve_links INTEGER NOT NULL DEFAULT 0,
+                group_child_assemblies INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (owner, name)
             )
         )");
@@ -32,6 +33,11 @@ struct RepoStore::Impl {
         }
         try {
             db.exec("ALTER TABLE repos ADD COLUMN resolve_links INTEGER NOT NULL DEFAULT 0");
+        } catch (const SQLite::Exception&) {
+            // Column already present — nothing to do.
+        }
+        try {
+            db.exec("ALTER TABLE repos ADD COLUMN group_child_assemblies INTEGER NOT NULL DEFAULT 0");
         } catch (const SQLite::Exception&) {
             // Column already present — nothing to do.
         }
@@ -174,6 +180,33 @@ bool RepoStore::is_resolve_links(const std::string& owner, const std::string& na
         return q.getColumn(0).getInt() != 0;
     } catch (const SQLite::Exception& e) {
         spdlog::error("RepoStore::is_resolve_links: {}", e.what());
+        return false;
+    }
+}
+
+void RepoStore::set_group_child_assemblies(const std::string& owner, const std::string& name,
+                                            bool group_child_assemblies) {
+    std::lock_guard lk{impl_->mtx};
+    try {
+        SQLite::Statement q{impl_->db,
+            "UPDATE repos SET group_child_assemblies = ? WHERE owner = ? AND name = ?"};
+        q.bind(1, group_child_assemblies ? 1 : 0); q.bind(2, owner); q.bind(3, name);
+        q.exec();
+    } catch (const SQLite::Exception& e) {
+        spdlog::error("RepoStore::set_group_child_assemblies: {}", e.what());
+    }
+}
+
+bool RepoStore::is_group_child_assemblies(const std::string& owner, const std::string& name) const {
+    std::lock_guard lk{impl_->mtx};
+    try {
+        SQLite::Statement q{impl_->db,
+            "SELECT group_child_assemblies FROM repos WHERE owner = ? AND name = ?"};
+        q.bind(1, owner); q.bind(2, name);
+        if (!q.executeStep()) return false; // unknown repo → whole-tree default
+        return q.getColumn(0).getInt() != 0;
+    } catch (const SQLite::Exception& e) {
+        spdlog::error("RepoStore::is_group_child_assemblies: {}", e.what());
         return false;
     }
 }

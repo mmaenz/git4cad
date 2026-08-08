@@ -210,6 +210,12 @@ void GitHttpRoutes::enqueue_cad_for_ref(git::Repository&   repo_obj,
                                          const std::string& repo_name,
                                          const std::string& old_sha,
                                          const std::string& new_sha) const {
+    // Only produce the light hull GLB alongside the full one when the repo
+    // has "full assembly" viewing on — otherwise it's dead weight nobody
+    // will ever request. Read once per push; the setting doesn't change
+    // mid-walk.
+    const bool with_light = repos_.is_resolve_links(user, repo_name);
+
     repo_obj.walk_new_commits(
         old_sha, new_sha,
         [&](const git::CommitInfo& ci, const std::vector<std::string>& files) {
@@ -217,11 +223,12 @@ void GitHttpRoutes::enqueue_cad_for_ref(git::Repository&   repo_obj,
                 auto blob = repo_obj.read_blob_at_commit(ci.sha, fp);
                 if (!blob) continue;
                 cad::CadJob job{};
-                job.user      = user;
-                job.repo      = repo_name;
-                job.sha       = ci.sha;
-                job.file_path = fp;
-                job.blob_data = std::move(*blob);
+                job.user       = user;
+                job.repo       = repo_name;
+                job.sha        = ci.sha;
+                job.file_path  = fp;
+                job.blob_data  = std::move(*blob);
+                job.with_light = with_light;
                 pipeline_.enqueue(std::move(job));
             }
         });

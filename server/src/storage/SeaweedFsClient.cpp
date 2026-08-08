@@ -71,9 +71,11 @@ SeaweedFsClient::SeaweedFsClient(std::string filer_base_url, std::string public_
 std::string SeaweedFsClient::filer_subpath(const std::string& user,
                                             const std::string& repo,
                                             const std::string& sha,
-                                            const std::string& file_path) {
+                                            const std::string& file_path,
+                                            bool               light) {
     const std::string path_hash = util::sha256_hex(file_path.data(), file_path.size());
-    return "/glb/" + user + "/" + repo + "/" + sha + "/" + path_hash.substr(0, 16) + ".glb";
+    return "/glb/" + user + "/" + repo + "/" + sha + "/" + path_hash.substr(0, 16)
+         + (light ? "_light" : "") + ".glb";
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -82,7 +84,8 @@ bool SeaweedFsClient::upload(const std::string& user,
                               const std::string& repo,
                               const std::string& sha,
                               const std::string& file_path,
-                              const fs::path&    local_file) const noexcept {
+                              const fs::path&    local_file,
+                              bool               light) const noexcept {
     CURL* raw = curl_easy_init();
     if (!raw) {
         spdlog::error("SeaweedFsClient: curl_easy_init failed");
@@ -104,7 +107,7 @@ bool SeaweedFsClient::upload(const std::string& user,
         return false;
     }
 
-    const std::string url = filer_base_url_ + filer_subpath(user, repo, sha, file_path);
+    const std::string url = filer_base_url_ + filer_subpath(user, repo, sha, file_path, light);
     curl_easy_setopt(raw, CURLOPT_URL, url.c_str());
     curl_easy_setopt(raw, CURLOPT_UPLOAD, 1L);
     curl_easy_setopt(raw, CURLOPT_READDATA, fp);
@@ -130,12 +133,13 @@ bool SeaweedFsClient::upload(const std::string& user,
 bool SeaweedFsClient::exists(const std::string& user,
                               const std::string& repo,
                               const std::string& sha,
-                              const std::string& file_path) const noexcept {
+                              const std::string& file_path,
+                              bool               light) const noexcept {
     CURL* raw = curl_easy_init();
     if (!raw) { return false; }
     CurlGuard guard{raw};
 
-    const std::string url = filer_base_url_ + filer_subpath(user, repo, sha, file_path);
+    const std::string url = filer_base_url_ + filer_subpath(user, repo, sha, file_path, light);
     curl_easy_setopt(raw, CURLOPT_URL, url.c_str());
     curl_easy_setopt(raw, CURLOPT_NOBODY, 1L);   // HEAD request
     curl_easy_setopt(raw, CURLOPT_WRITEFUNCTION, discard_write);
@@ -151,8 +155,9 @@ bool SeaweedFsClient::exists(const std::string& user,
 std::string SeaweedFsClient::public_url(const std::string& user,
                                          const std::string& repo,
                                          const std::string& sha,
-                                         const std::string& file_path) const {
-    return public_prefix_ + filer_subpath(user, repo, sha, file_path);
+                                         const std::string& file_path,
+                                         bool               light) const {
+    return public_prefix_ + filer_subpath(user, repo, sha, file_path, light);
 }
 
 // ── LFS object API ────────────────────────────────────────────────────────────
